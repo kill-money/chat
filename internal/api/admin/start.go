@@ -86,11 +86,15 @@ func Start(ctx context.Context, index int, config *Config) error {
 	if err != nil {
 		return err
 	}
+	receptionistMgr, err := NewReceptionistManager(mgocli)
+	if err != nil {
+		return err
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
-	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, config, client)
+	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, receptionistMgr, config, client)
 
 	if config.Discovery.Enable == kdisc.ETCDCONST {
 		cm := disetcd.NewConfigManager(client.(*etcd.SvcDiscoveryRegistryImpl).GetClient(), config.GetConfigNames())
@@ -134,7 +138,7 @@ func Start(ctx context.Context, index int, config *Config) error {
 	return nil
 }
 
-func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
+func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, receptionistMgr *ReceptionistManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
 	adminRouterGroup := router.Group("/account")
 	adminRouterGroup.POST("/login", admin.AdminLogin)                                   // Login
 	adminRouterGroup.POST("/update", mw.CheckAdmin, admin.AdminUpdateInfo)              // Modify information
@@ -209,6 +213,15 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *Whiteli
 	whitelistRouter.POST("/del", wlMgr.DelWhitelist)
 	whitelistRouter.POST("/update", wlMgr.UpdateWhitelist)
 	whitelistRouter.POST("/search", wlMgr.SearchWhitelist)
+
+	// 二开：接待员管理（邀请码 + 绑定关系）
+	receptionistRouter := router.Group("/receptionist", mw.CheckAdmin)
+	receptionistRouter.POST("/invite_codes/search", receptionistMgr.SearchInviteCodes)
+	receptionistRouter.POST("/invite_codes/update_status", receptionistMgr.UpdateInviteCodeStatus)
+	receptionistRouter.POST("/invite_codes/delete", receptionistMgr.DeleteInviteCode)
+	receptionistRouter.POST("/bindings/get", receptionistMgr.GetBinding)
+	receptionistRouter.POST("/bindings/list", receptionistMgr.ListBindings)
+	receptionistRouter.POST("/bindings/delete", receptionistMgr.DeleteBinding)
 
 	initGroup := router.Group("/client_config", mw.CheckAdmin)
 	initGroup.POST("/get", admin.GetClientConfig) // Get client initialization configuration

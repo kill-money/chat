@@ -17,15 +17,17 @@ package apistruct
 import "github.com/openimsdk/protocol/sdkws"
 
 type UserRegisterResp struct {
-	ImToken   string `json:"imToken"`
-	ChatToken string `json:"chatToken"`
-	UserID    string `json:"userID"`
+	ImToken        string `json:"imToken"`
+	ChatToken      string `json:"chatToken"`
+	UserID         string `json:"userID"`
+	ReceptionistID string `json:"receptionistID,omitempty"` // 二开：绑定的接待员userID（若注册时填写了有效的接待员邀请码）
 }
 
 type LoginResp struct {
 	ImToken   string `json:"imToken"`
 	ChatToken string `json:"chatToken"`
 	UserID    string `json:"userID"`
+	AppRole   int32  `json:"appRole"` // 二开：0=普通用户 1=用户端管理员
 }
 
 type UpdateUserInfoResp struct{}

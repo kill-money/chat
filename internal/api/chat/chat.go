@@ -18,8 +18,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/openimsdk/chat/internal/api/util"
 	chatmw "github.com/openimsdk/chat/internal/api/mw"
+	"github.com/openimsdk/chat/internal/api/util"
 
 	"github.com/gin-gonic/gin"
 	"github.com/openimsdk/chat/pkg/common/apistruct"
@@ -50,6 +50,7 @@ type Api struct {
 	chatClient  chatpb.ChatClient
 	adminClient admin.AdminClient
 	imApiCaller imapi.CallerInterface
+	Receptionist *ReceptionistChatHandler // 二开：接待员功能，由 start.go 注入
 }
 
 // ################## ACCOUNT ##################
@@ -155,6 +156,10 @@ func (o *Api) RegisterUser(c *gin.Context) {
 	}
 	resp.ChatToken = respRegisterUser.ChatToken
 	resp.UserID = respRegisterUser.UserID
+	// 二开：若填写了接待员邀请码，执行绑定并返回接待员 userID
+	if o.Receptionist != nil && req.InvitationCode != "" {
+		resp.ReceptionistID = o.Receptionist.BindAfterRegister(c.Request.Context(), respRegisterUser.UserID, req.InvitationCode, apiCtx)
+	}
 	apiresp.GinSuccess(c, &resp)
 }
 

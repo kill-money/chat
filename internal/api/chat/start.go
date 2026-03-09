@@ -19,6 +19,7 @@ import (
 	disetcd "github.com/openimsdk/chat/pkg/common/kdisc/etcd"
 	adminclient "github.com/openimsdk/chat/pkg/protocol/admin"
 	chatclient "github.com/openimsdk/chat/pkg/protocol/chat"
+	"github.com/openimsdk/tools/db/mongoutil"
 	"github.com/openimsdk/tools/discovery/etcd"
 	"github.com/openimsdk/tools/errs"
 	"github.com/openimsdk/tools/mw"
@@ -34,6 +35,7 @@ type Config struct {
 	Discovery config.Discovery
 	Share     config.Share
 	Redis     config.Redis
+	Mongo     config.Mongo // 二开：接待员功能需要直连 MongoDB
 
 	RuntimeEnv string
 }
@@ -71,6 +73,18 @@ func Start(ctx context.Context, index int, cfg *Config) error {
 	}
 	adminApi := New(chatClient, adminClient, im, &base)
 	mwApi := chatmw.New(adminClient)
+
+	// 二开：接待员功能 — 初始化 MongoDB 并注入 handler
+	mgocli, err := mongoutil.NewMongoDB(ctx, cfg.Mongo.Build())
+	if err != nil {
+		return err
+	}
+	receptionistHdl, err := NewReceptionistChatHandler(mgocli, im)
+	if err != nil {
+		return err
+	}
+	adminApi.Receptionist = receptionistHdl
+
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
@@ -154,4 +168,11 @@ func SetChatRoute(router gin.IRouter, chat *Api, mw *chatmw.MW) {
 	applicationGroup.POST("/page_versions", chat.PageApplicationVersion)
 
 	router.Group("/callback").POST("/open_im", chat.OpenIMCallback) // Callback
+
+	// 二开：接待员功能路由
+	if chat.Receptionist != nil {
+		router.POST("/receptionist/my_code", mw.CheckToken, chat.Receptionist.GenInviteCode)
+		router.POST("/customer/my_receptionist", mw.CheckToken, chat.Receptionist.MyReceptionist)
+		router.POST("/receptionist/my_customers", mw.CheckToken, chat.Receptionist.MyCustomers)
+	}
 }
