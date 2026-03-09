@@ -85,6 +85,13 @@ func Start(ctx context.Context, index int, cfg *Config) error {
 	}
 	adminApi.Receptionist = receptionistHdl
 
+	// 二开：推荐系统 handler
+	referralHdl, err := NewReferralChatHandler(mgocli, im)
+	if err != nil {
+		return err
+	}
+	adminApi.Referral = referralHdl
+
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)

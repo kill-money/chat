@@ -24,10 +24,11 @@ type UserRegisterResp struct {
 }
 
 type LoginResp struct {
-	ImToken   string `json:"imToken"`
-	ChatToken string `json:"chatToken"`
-	UserID    string `json:"userID"`
-	AppRole   int32  `json:"appRole"` // 二开：0=普通用户 1=用户端管理员
+	ImToken     string `json:"imToken"`
+	ChatToken   string `json:"chatToken"`
+	UserID      string `json:"userID"`
+	AppRole     int32  `json:"appRole"`     // 二开：0=普通用户 1=用户端管理员
+	IsUserAdmin bool   `json:"isUserAdmin"` // 二开：是否为推荐系统管理员（在 user_admins 集合中）
 }
 
 type UpdateUserInfoResp struct{}

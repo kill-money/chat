@@ -38,6 +38,7 @@ type CallerInterface interface {
 	FriendUserIDs(ctx context.Context, userID string) ([]string, error)
 	AccountCheckSingle(ctx context.Context, userID string) (bool, error)
 	SendSimpleMsg(ctx context.Context, req *SendSingleMsgReq, key string) error
+	SendTextMsg(ctx context.Context, sendID, recvID, senderNickname, text string) error // 二开：推荐系统自动消息
 }
 
 type authToken struct {
@@ -223,6 +224,21 @@ func (c *Caller) AccountCheckSingle(ctx context.Context, userID string) (bool, e
 
 func (c *Caller) SendSimpleMsg(ctx context.Context, req *SendSingleMsgReq, key string) error {
 	_, err := sendSimpleMsg.CallWithQuery(ctx, c.imApi, req, map[string]string{botstruct.Key: key})
+	return err
+}
+
+// SendTextMsg sends a text IM message from sendID to recvID (best-effort; errors are non-fatal).
+func (c *Caller) SendTextMsg(ctx context.Context, sendID, recvID, senderNickname, text string) error {
+	_, err := sendMsg.Call(ctx, c.imApi, &SendMsgReq{
+		SendID:           sendID,
+		RecvID:           recvID,
+		SenderNickname:   senderNickname,
+		SenderPlatformID: 1,
+		Content:          map[string]string{"text": text},
+		ContentType:      101,
+		SessionType:      1,
+		SendTime:         0, // server will use current time
+	})
 	return err
 }
 

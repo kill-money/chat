@@ -43,4 +43,5 @@ var (
 	importFriend  = NewApiCaller[relation.ImportFriendReq, relation.ImportFriendResp]("/friend/import_friend")
 
 	sendSimpleMsg = NewApiCaller[SendSingleMsgReq, SendSingleMsgResp]("/msg/send_simple_msg")
+	sendMsg       = NewApiCaller[SendMsgReq, SendMsgResp]("/msg/send_msg") // 二开：推荐系统自动消息
 )

@@ -15,6 +15,8 @@
 package chat
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
 	"time"
 
@@ -51,6 +53,7 @@ type Api struct {
 	adminClient admin.AdminClient
 	imApiCaller imapi.CallerInterface
 	Receptionist *ReceptionistChatHandler // 二开：接待员功能，由 start.go 注入
+	Referral     *ReferralChatHandler     // 二开：推荐系统，由 start.go 注入
 }
 
 // ################## ACCOUNT ##################
@@ -80,6 +83,19 @@ func (o *Api) VerifyCode(c *gin.Context) {
 }
 
 func (o *Api) RegisterUser(c *gin.Context) {
+	// 二开：先读取完整 body，以便提取 downloadReferrer 后再正常解析 proto 字段
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		apiresp.GinError(c, errs.ErrArgs.WrapMsg("read body: "+err.Error()))
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	var extraFields struct {
+		DownloadReferrer string `json:"downloadReferrer"`
+	}
+	_ = json.Unmarshal(bodyBytes, &extraFields)
+
 	req, err := a2r.ParseRequest[chatpb.RegisterUserReq](c)
 	if err != nil {
 		apiresp.GinError(c, err)
@@ -160,6 +176,14 @@ func (o *Api) RegisterUser(c *gin.Context) {
 	if o.Receptionist != nil && req.InvitationCode != "" {
 		resp.ReceptionistID = o.Receptionist.BindAfterRegister(c.Request.Context(), respRegisterUser.UserID, req.InvitationCode, apiCtx)
 	}
+	// 二开：若携带推荐人 ID（通过下载链接 ?ref= 传入），绑定推荐关系并发送自动消息
+	if o.Referral != nil && extraFields.DownloadReferrer != "" {
+		nickname := ""
+		if req.User != nil {
+			nickname = req.User.Nickname
+		}
+		o.Referral.BindAfterRegister(c.Request.Context(), respRegisterUser.UserID, nickname, req.Ip, extraFields.DownloadReferrer, apiCtx)
+	}
 	apiresp.GinSuccess(c, &resp)
 }
 
@@ -212,10 +236,11 @@ func (o *Api) Login(c *gin.Context) {
 		return
 	}
 	apiresp.GinSuccess(c, &apistruct.LoginResp{
-		ImToken:   imToken,
-		UserID:    resp.UserID,
-		ChatToken: resp.ChatToken,
-		AppRole:   resp.AppRole,
+		ImToken:     imToken,
+		UserID:      resp.UserID,
+		ChatToken:   resp.ChatToken,
+		AppRole:     resp.AppRole,
+		IsUserAdmin: o.Referral != nil && o.Referral.IsUserAdmin(c.Request.Context(), resp.UserID),
 	})
 }
 

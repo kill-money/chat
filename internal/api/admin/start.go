@@ -90,11 +90,15 @@ func Start(ctx context.Context, index int, config *Config) error {
 	if err != nil {
 		return err
 	}
+	userAdminMgr, err := NewUserAdminManager(mgocli)
+	if err != nil {
+		return err
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
-	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, receptionistMgr, config, client)
+	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, receptionistMgr, userAdminMgr, config, client)
 
 	if config.Discovery.Enable == kdisc.ETCDCONST {
 		cm := disetcd.NewConfigManager(client.(*etcd.SvcDiscoveryRegistryImpl).GetClient(), config.GetConfigNames())
@@ -138,7 +142,7 @@ func Start(ctx context.Context, index int, config *Config) error {
 	return nil
 }
 
-func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, receptionistMgr *ReceptionistManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
+func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, receptionistMgr *ReceptionistManager, userAdminMgr *UserAdminManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
 	adminRouterGroup := router.Group("/account")
 	adminRouterGroup.POST("/login", admin.AdminLogin)                                   // Login
 	adminRouterGroup.POST("/update", mw.CheckAdmin, admin.AdminUpdateInfo)              // Modify information
@@ -222,6 +226,13 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *Whiteli
 	receptionistRouter.POST("/bindings/get", receptionistMgr.GetBinding)
 	receptionistRouter.POST("/bindings/list", receptionistMgr.ListBindings)
 	receptionistRouter.POST("/bindings/delete", receptionistMgr.DeleteBinding)
+
+	// 二开：用户端管理员 + 推荐系统
+	userAdminRouter := router.Group("/user_admin", mw.CheckAdmin)
+	userAdminRouter.POST("/add", userAdminMgr.AddUserAdmin)
+	userAdminRouter.POST("/remove", userAdminMgr.RemoveUserAdmin)
+	userAdminRouter.POST("/search", userAdminMgr.SearchUserAdmins)
+	userAdminRouter.POST("/referral/users", userAdminMgr.GetReferralUsers)
 
 	initGroup := router.Group("/client_config", mw.CheckAdmin)
 	initGroup.POST("/get", admin.GetClientConfig) // Get client initialization configuration
