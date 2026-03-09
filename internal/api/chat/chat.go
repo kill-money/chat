@@ -19,11 +19,13 @@ import (
 	"time"
 
 	"github.com/openimsdk/chat/internal/api/util"
+	chatmw "github.com/openimsdk/chat/internal/api/mw"
 
 	"github.com/gin-gonic/gin"
 	"github.com/openimsdk/chat/pkg/common/apistruct"
 	"github.com/openimsdk/chat/pkg/common/imapi"
 	"github.com/openimsdk/chat/pkg/common/mctx"
+	"github.com/openimsdk/chat/pkg/eerrs"
 	"github.com/openimsdk/chat/pkg/protocol/admin"
 	chatpb "github.com/openimsdk/chat/pkg/protocol/chat"
 	constantpb "github.com/openimsdk/protocol/constant"
@@ -168,10 +170,29 @@ func (o *Api) Login(c *gin.Context) {
 		return
 	}
 	req.Ip = ip
+	// 二开：检查登录锁定（5 次失败后锁定 5 分钟）
+	lockKey := req.PhoneNumber
+	if req.Account != "" {
+		lockKey = req.Account
+	} else if req.Email != "" {
+		lockKey = req.Email
+	}
+	if lockKey != "" && chatmw.IsLoginLocked(lockKey) {
+		apiresp.GinError(c, eerrs.ErrForbidden.WrapMsg("登录失败次数过多，账号已锁定5分钟"))
+		return
+	}
 	resp, err := o.chatClient.Login(c, req)
 	if err != nil {
+		// 记录失败次数（密码错误或账号不存在时）
+		if lockKey != "" {
+			chatmw.RecordLoginFailure(lockKey)
+		}
 		apiresp.GinError(c, err)
 		return
+	}
+	// 登录成功，重置失败计数
+	if lockKey != "" {
+		chatmw.ResetLoginFailure(lockKey)
 	}
 	adminToken, err := o.imApiCaller.ImAdminTokenWithDefaultAdmin(c)
 	if err != nil {
@@ -189,6 +210,7 @@ func (o *Api) Login(c *gin.Context) {
 		ImToken:   imToken,
 		UserID:    resp.UserID,
 		ChatToken: resp.ChatToken,
+		AppRole:   resp.AppRole,
 	})
 }
 
@@ -281,6 +303,11 @@ func (o *Api) SearchUserPublicInfo(c *gin.Context) {
 
 func (o *Api) GetTokenForVideoMeeting(c *gin.Context) {
 	a2r.Call(c, chatpb.ChatClient.GetTokenForVideoMeeting, o.chatClient)
+}
+
+// 二开：查询指定用户 IP（仅管理员或用户端管理员可调）
+func (o *Api) GetUserIPInfo(c *gin.Context) {
+	a2r.Call(c, chatpb.ChatClient.GetUserIPInfo, o.chatClient)
 }
 
 // ################## APPLET ##################

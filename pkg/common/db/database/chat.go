@@ -39,6 +39,7 @@ type ChatDatabaseInterface interface {
 	TakeAttributeByAccount(ctx context.Context, account string) (*chatdb.Attribute, error)
 	TakeAttributeByUserID(ctx context.Context, userID string) (*chatdb.Attribute, error)
 	TakeAccount(ctx context.Context, userID string) (*chatdb.Account, error)
+	UpdateAttribute(ctx context.Context, userID string, data map[string]any) error
 	TakeCredentialByAccount(ctx context.Context, account string) (*chatdb.Credential, error)
 	TakeCredentialsByUserID(ctx context.Context, userID string) ([]*chatdb.Credential, error)
 	TakeLastVerifyCode(ctx context.Context, account string) (*chatdb.VerifyCode, error)
@@ -55,7 +56,11 @@ type ChatDatabaseInterface interface {
 	NewUserCountTotal(ctx context.Context, before *time.Time) (int64, error)
 	UserLoginCountTotal(ctx context.Context, before *time.Time) (int64, error)
 	UserLoginCountRangeEverydayTotal(ctx context.Context, start *time.Time, end *time.Time) (map[string]int64, int64, error)
+	// 二开：按 user_id 分页查询登录记录（用于 GetUserIPLogs）
+	FindUserLoginRecordsByUserID(ctx context.Context, userID string, pagination pagination.Pagination) (int64, []*chatdb.UserLoginRecord, error)
 	DelUserAccount(ctx context.Context, userIDs []string) error
+	// 二开：白名单登录检查
+	FindWhitelistByIdentifier(ctx context.Context, identifier string) (*admin.WhitelistUser, error)
 }
 
 func NewChatDatabase(cli *mongoutil.Client) (ChatDatabaseInterface, error) {
@@ -87,6 +92,10 @@ func NewChatDatabase(cli *mongoutil.Client) (ChatDatabaseInterface, error) {
 	if err != nil {
 		return nil, err
 	}
+	whitelistUser, err := admindb.NewWhitelistUser(cli.GetDB())
+	if err != nil {
+		return nil, err
+	}
 	return &ChatDatabase{
 		tx:               cli.GetTx(),
 		register:         register,
@@ -96,6 +105,7 @@ func NewChatDatabase(cli *mongoutil.Client) (ChatDatabaseInterface, error) {
 		userLoginRecord:  userLoginRecord,
 		verifyCode:       verifyCode,
 		forbiddenAccount: forbiddenAccount,
+		whitelistUser:    whitelistUser,
 	}, nil
 }
 
@@ -108,6 +118,7 @@ type ChatDatabase struct {
 	userLoginRecord  chatdb.UserLoginRecordInterface
 	verifyCode       chatdb.VerifyCodeInterface
 	forbiddenAccount admin.ForbiddenAccountInterface
+	whitelistUser    admin.WhitelistInterface
 }
 
 func (o *ChatDatabase) GetUser(ctx context.Context, userID string) (account *chatdb.Account, err error) {
@@ -153,6 +164,10 @@ func (o *ChatDatabase) TakeAttributeByAccount(ctx context.Context, account strin
 
 func (o *ChatDatabase) TakeAttributeByUserID(ctx context.Context, userID string) (*chatdb.Attribute, error) {
 	return o.attribute.Take(ctx, userID)
+}
+
+func (o *ChatDatabase) UpdateAttribute(ctx context.Context, userID string, data map[string]any) error {
+	return o.attribute.Update(ctx, userID, data)
 }
 
 func (o *ChatDatabase) TakeLastVerifyCode(ctx context.Context, account string) (*chatdb.VerifyCode, error) {
@@ -275,6 +290,14 @@ func (o *ChatDatabase) UserLoginCountTotal(ctx context.Context, before *time.Tim
 
 func (o *ChatDatabase) UserLoginCountRangeEverydayTotal(ctx context.Context, start *time.Time, end *time.Time) (map[string]int64, int64, error) {
 	return o.userLoginRecord.CountRangeEverydayTotal(ctx, start, end)
+}
+
+func (o *ChatDatabase) FindUserLoginRecordsByUserID(ctx context.Context, userID string, pagination pagination.Pagination) (int64, []*chatdb.UserLoginRecord, error) {
+	return o.userLoginRecord.FindByUserID(ctx, userID, pagination)
+}
+
+func (o *ChatDatabase) FindWhitelistByIdentifier(ctx context.Context, identifier string) (*admin.WhitelistUser, error) {
+	return o.whitelistUser.TakeByIdentifier(ctx, identifier)
 }
 
 func (o *ChatDatabase) DelUserAccount(ctx context.Context, userIDs []string) error {

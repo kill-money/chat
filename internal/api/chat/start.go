@@ -73,7 +73,7 @@ func Start(ctx context.Context, index int, cfg *Config) error {
 	mwApi := chatmw.New(adminClient)
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID())
+	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
 	SetChatRoute(engine, adminApi, mwApi)
 
 	var (
@@ -140,7 +140,8 @@ func SetChatRoute(router gin.IRouter, chat *Api, mw *chatmw.MW) {
 	user.POST("/find/full", chat.FindUserFullInfo)            // Get all information of the user
 	user.POST("/search/full", chat.SearchUserFullInfo)        // Search user's public information
 	user.POST("/search/public", chat.SearchUserPublicInfo)    // Search all information of the user
-	user.POST("/rtc/get_token", chat.GetTokenForVideoMeeting) // Get token for video meeting for the user
+	user.POST("/rtc/get_token", chat.GetTokenForVideoMeeting)  // Get token for video meeting for the user
+	user.POST("/ip_info", chat.GetUserIPInfo)                 // 二开：查询指定用户 IP（需管理员或用户端管理员权限）
 
 	router.POST("/friend/search", mw.CheckToken, chat.SearchFriend)
 

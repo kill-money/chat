@@ -450,6 +450,19 @@ func (o *chatSvr) Login(ctx context.Context, req *chat.LoginReq) (*chat.LoginRes
 		}
 		return nil, err
 	}
+	// 二开：白名单登录检查（配置项 whitelist_login_enabled=1 时生效）
+	conf, confErr := o.Admin.GetConfig(ctx)
+	if confErr == nil {
+		if val := conf[constant.WhitelistLoginEnabledKey]; strings.EqualFold(val, "1") || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes") {
+			wl, wlErr := o.Database.FindWhitelistByIdentifier(ctx, acc)
+			if wlErr != nil || wl == nil {
+				return nil, eerrs.ErrForbidden.WrapMsg("账号不在登录白名单中，请联系管理员")
+			}
+			if wl.Status != 1 {
+				return nil, eerrs.ErrForbidden.WrapMsg("账号白名单已停用，请联系管理员")
+			}
+		}
+	}
 	if err := o.Admin.CheckLogin(ctx, credential.UserID, req.Ip); err != nil {
 		return nil, err
 	}
@@ -499,6 +512,13 @@ func (o *chatSvr) Login(ctx context.Context, req *chat.LoginReq) (*chat.LoginRes
 	if err := o.Database.LoginRecord(ctx, record, verifyCodeID); err != nil {
 		return nil, err
 	}
+	// 二开：更新用户最后登录 IP 与时间（用于 IP 查看功能）
+	if err := o.Database.UpdateAttribute(ctx, credential.UserID, map[string]any{
+		"last_ip":   req.Ip,
+		"last_ip_at": time.Now(),
+	}); err != nil {
+		log.ZWarn(ctx, "UpdateAttribute last_ip failed", err, "userID", credential.UserID)
+	}
 	if verifyCodeID != nil {
 		if err := o.Database.DelVerifyCode(ctx, *verifyCodeID); err != nil {
 			return nil, err
@@ -506,5 +526,9 @@ func (o *chatSvr) Login(ctx context.Context, req *chat.LoginReq) (*chat.LoginRes
 	}
 	resp.UserID = credential.UserID
 	resp.ChatToken = chatToken.Token
+	// 二开：返回 app_role 供客户端做 IP 查看权限判断
+	if attr, _ := o.Database.TakeAttributeByUserID(ctx, credential.UserID); attr != nil {
+		resp.AppRole = attr.AppRole
+	}
 	return resp, nil
 }

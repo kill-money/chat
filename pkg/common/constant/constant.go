@@ -86,6 +86,9 @@ const RpcCustomHeader = constant.RpcCustomHeader
 
 const NeedInvitationCodeRegisterConfigKey = "needInvitationCodeRegister"
 
+// 二开：白名单登录控制配置键（值为 "1"/"true"/"yes" 时强制白名单登录）
+const WhitelistLoginEnabledKey = "whitelistLoginEnabled"
+
 const (
 	DefaultAllowVibration = 1
 	DefaultAllowBeep      = 1

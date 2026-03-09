@@ -84,6 +84,12 @@ type AdminDatabaseInterface interface {
 	UpdateVersion(ctx context.Context, id primitive.ObjectID, update map[string]any) error
 	DeleteVersion(ctx context.Context, id []primitive.ObjectID) error
 	PageVersion(ctx context.Context, platforms []string, page pagination.Pagination) (int64, []*admindb.Application, error)
+	// 二开：白名单管理
+	FindWhitelistUser(ctx context.Context, identifier string) (*admindb.WhitelistUser, error)
+	AddWhitelistUser(ctx context.Context, users []*admindb.WhitelistUser) error
+	UpdateWhitelistUser(ctx context.Context, id string, update map[string]any) error
+	DelWhitelistUser(ctx context.Context, ids []string) error
+	SearchWhitelistUser(ctx context.Context, keyword string, status int32, pagination pagination.Pagination) (int64, []*admindb.WhitelistUser, error)
 }
 
 func NewAdminDatabase(cli *mongoutil.Client, rdb redis.UniversalClient) (AdminDatabaseInterface, error) {
@@ -127,6 +133,10 @@ func NewAdminDatabase(cli *mongoutil.Client, rdb redis.UniversalClient) (AdminDa
 	if err != nil {
 		return nil, err
 	}
+	whitelist, err := admin.NewWhitelistUser(cli.GetDB())
+	if err != nil {
+		return nil, err
+	}
 	return &AdminDatabase{
 		tx:                 cli.GetTx(),
 		admin:              a,
@@ -139,6 +149,7 @@ func NewAdminDatabase(cli *mongoutil.Client, rdb redis.UniversalClient) (AdminDa
 		applet:             applet,
 		clientConfig:       clientConfig,
 		application:        application,
+		whitelist:          whitelist,
 		cache:              cache.NewTokenInterface(rdb),
 	}, nil
 }
@@ -155,6 +166,7 @@ type AdminDatabase struct {
 	applet             admindb.AppletInterface
 	clientConfig       admindb.ClientConfigInterface
 	application        admindb.ApplicationInterface
+	whitelist          admindb.WhitelistInterface
 	cache              cache.TokenInterface
 }
 
@@ -378,4 +390,25 @@ func (o *AdminDatabase) DeleteVersion(ctx context.Context, id []primitive.Object
 
 func (o *AdminDatabase) PageVersion(ctx context.Context, platforms []string, page pagination.Pagination) (int64, []*admindb.Application, error) {
 	return o.application.PageVersion(ctx, platforms, page)
+}
+
+// 二开：白名单管理实现
+func (o *AdminDatabase) FindWhitelistUser(ctx context.Context, identifier string) (*admindb.WhitelistUser, error) {
+	return o.whitelist.TakeByIdentifier(ctx, identifier)
+}
+
+func (o *AdminDatabase) AddWhitelistUser(ctx context.Context, users []*admindb.WhitelistUser) error {
+	return o.whitelist.Create(ctx, users)
+}
+
+func (o *AdminDatabase) UpdateWhitelistUser(ctx context.Context, id string, update map[string]any) error {
+	return o.whitelist.Update(ctx, id, update)
+}
+
+func (o *AdminDatabase) DelWhitelistUser(ctx context.Context, ids []string) error {
+	return o.whitelist.Delete(ctx, ids)
+}
+
+func (o *AdminDatabase) SearchWhitelistUser(ctx context.Context, keyword string, status int32, pagination pagination.Pagination) (int64, []*admindb.WhitelistUser, error) {
+	return o.whitelist.Search(ctx, keyword, status, pagination)
 }

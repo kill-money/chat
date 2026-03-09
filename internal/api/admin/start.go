@@ -19,6 +19,7 @@ import (
 	disetcd "github.com/openimsdk/chat/pkg/common/kdisc/etcd"
 	adminclient "github.com/openimsdk/chat/pkg/protocol/admin"
 	chatclient "github.com/openimsdk/chat/pkg/protocol/chat"
+	"github.com/openimsdk/tools/db/mongoutil"
 	"github.com/openimsdk/tools/discovery"
 	"github.com/openimsdk/tools/discovery/etcd"
 	"github.com/openimsdk/tools/errs"
@@ -71,10 +72,21 @@ func Start(ctx context.Context, index int, config *Config) error {
 	}
 	adminApi := New(chatClient, adminClient, im, &base)
 	mwApi := chatmw.New(adminClient)
+
+	// 二开：初始化 MongoDB（用于白名单管理直接操作）
+	mgocli, err := mongoutil.NewMongoDB(ctx, config.AllConfig.Mongo.Build())
+	if err != nil {
+		return err
+	}
+	whitelistMgr, err := NewWhitelistManager(mgocli.GetDB())
+	if err != nil {
+		return err
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
-	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID())
-	SetAdminRoute(engine, adminApi, mwApi, config, client)
+	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
+	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, config, client)
 
 	if config.Discovery.Enable == kdisc.ETCDCONST {
 		cm := disetcd.NewConfigManager(client.(*etcd.SvcDiscoveryRegistryImpl).GetClient(), config.GetConfigNames())
@@ -118,8 +130,7 @@ func Start(ctx context.Context, index int, config *Config) error {
 	return nil
 }
 
-func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, cfg *Config, client discovery.SvcDiscoveryRegistry) {
-
+func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
 	adminRouterGroup := router.Group("/account")
 	adminRouterGroup.POST("/login", admin.AdminLogin)                                   // Login
 	adminRouterGroup.POST("/update", mw.CheckAdmin, admin.AdminUpdateInfo)              // Modify information
@@ -129,7 +140,9 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, cfg *Config, c
 	adminRouterGroup.POST("/add_user", mw.CheckAdmin, admin.AddUserAccount)             // Add user account
 	adminRouterGroup.POST("/del_admin", mw.CheckAdmin, admin.DelAdminAccount)           // Delete admin
 	adminRouterGroup.POST("/search", mw.CheckAdmin, admin.SearchAdminAccount)           // Get admin list
-	//account.POST("/add_notification_account")
+	// account.POST("/add_notification_account")
+
+	router.POST("/user/batch_register", mw.CheckAdmin, admin.BatchRegisterUsers)
 
 	importGroup := router.Group("/user/import")
 	importGroup.POST("/json", mw.CheckAdmin, admin.ImportUserByJson)
@@ -180,7 +193,17 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, cfg *Config, c
 	blockRouter.POST("/search", admin.SearchBlockUser) // Search blocked users
 
 	userRouter := router.Group("/user", mw.CheckAdmin)
-	userRouter.POST("/password/reset", admin.ResetUserPassword) // Reset user password
+	userRouter.POST("/password/reset", admin.ResetUserPassword)   // Reset user password
+	userRouter.POST("/set_app_role", admin.SetAppRole)            // 二开：设置用户端管理员
+	userRouter.POST("/ip_logs", admin.GetUserIPLogs)              // 二开：查询用户 IP 登录历史
+	userRouter.POST("/search", admin.SearchUserInfo)              // 二开：搜索用户（含 IP/角色，供管理端列表）
+
+	// 二开：白名单管理（仅超级管理员）
+	whitelistRouter := router.Group("/whitelist", mw.CheckAdmin)
+	whitelistRouter.POST("/add", wlMgr.AddWhitelist)
+	whitelistRouter.POST("/del", wlMgr.DelWhitelist)
+	whitelistRouter.POST("/update", wlMgr.UpdateWhitelist)
+	whitelistRouter.POST("/search", wlMgr.SearchWhitelist)
 
 	initGroup := router.Group("/client_config", mw.CheckAdmin)
 	initGroup.POST("/get", admin.GetClientConfig) // Get client initialization configuration

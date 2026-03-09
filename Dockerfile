@@ -46,7 +46,8 @@ COPY --from=builder $SERVER_DIR/start-config.yml $SERVER_DIR/
 COPY --from=builder $SERVER_DIR/go.mod $SERVER_DIR/
 COPY --from=builder $SERVER_DIR/go.sum $SERVER_DIR/
 
-RUN go get github.com/openimsdk/gomake@v0.0.14-alpha.5
+# 使用与 go.mod 一致的 gomake 版本（勿降级）
+RUN go mod download github.com/openimsdk/gomake
 
 # Set the command to run when the container starts
 ENTRYPOINT ["sh", "-c", "mage start && tail -f /dev/null"]
