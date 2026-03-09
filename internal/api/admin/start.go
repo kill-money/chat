@@ -82,11 +82,15 @@ func Start(ctx context.Context, index int, config *Config) error {
 	if err != nil {
 		return err
 	}
+	batchCreateMgr, err := NewBatchCreateManager(mgocli)
+	if err != nil {
+		return err
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
-	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, config, client)
+	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, config, client)
 
 	if config.Discovery.Enable == kdisc.ETCDCONST {
 		cm := disetcd.NewConfigManager(client.(*etcd.SvcDiscoveryRegistryImpl).GetClient(), config.GetConfigNames())
@@ -130,7 +134,7 @@ func Start(ctx context.Context, index int, config *Config) error {
 	return nil
 }
 
-func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
+func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
 	adminRouterGroup := router.Group("/account")
 	adminRouterGroup.POST("/login", admin.AdminLogin)                                   // Login
 	adminRouterGroup.POST("/update", mw.CheckAdmin, admin.AdminUpdateInfo)              // Modify information
@@ -197,6 +201,7 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *Whiteli
 	userRouter.POST("/set_app_role", admin.SetAppRole)            // 二开：设置用户端管理员
 	userRouter.POST("/ip_logs", admin.GetUserIPLogs)              // 二开：查询用户 IP 登录历史
 	userRouter.POST("/search", admin.SearchUserInfo)              // 二开：搜索用户（含 IP/角色，供管理端列表）
+	userRouter.POST("/batch_create", batchMgr.BatchCreate)        // 二开：批量创建用户（动态用户名解析）
 
 	// 二开：白名单管理（仅超级管理员）
 	whitelistRouter := router.Group("/whitelist", mw.CheckAdmin)
