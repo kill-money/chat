@@ -94,11 +94,15 @@ func Start(ctx context.Context, index int, config *Config) error {
 	if err != nil {
 		return err
 	}
+	walletMgr, err := NewWalletManager(mgocli)
+	if err != nil {
+		return err
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
-	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, receptionistMgr, userAdminMgr, config, client)
+	SetAdminRoute(engine, adminApi, mwApi, whitelistMgr, batchCreateMgr, receptionistMgr, userAdminMgr, walletMgr, config, client)
 
 	if config.Discovery.Enable == kdisc.ETCDCONST {
 		cm := disetcd.NewConfigManager(client.(*etcd.SvcDiscoveryRegistryImpl).GetClient(), config.GetConfigNames())
@@ -142,7 +146,7 @@ func Start(ctx context.Context, index int, config *Config) error {
 	return nil
 }
 
-func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, receptionistMgr *ReceptionistManager, userAdminMgr *UserAdminManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
+func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *WhitelistManager, batchMgr *BatchCreateManager, receptionistMgr *ReceptionistManager, userAdminMgr *UserAdminManager, walletMgr *WalletManager, cfg *Config, client discovery.SvcDiscoveryRegistry) {
 	adminRouterGroup := router.Group("/account")
 	adminRouterGroup.POST("/login", admin.AdminLogin)                                   // Login
 	adminRouterGroup.POST("/update", mw.CheckAdmin, admin.AdminUpdateInfo)              // Modify information
@@ -233,6 +237,12 @@ func SetAdminRoute(router gin.IRouter, admin *Api, mw *chatmw.MW, wlMgr *Whiteli
 	userAdminRouter.POST("/remove", userAdminMgr.RemoveUserAdmin)
 	userAdminRouter.POST("/search", userAdminMgr.SearchUserAdmins)
 	userAdminRouter.POST("/referral/users", userAdminMgr.GetReferralUsers)
+
+	// 二开：钱包管理
+	walletRouter := router.Group("/wallet", mw.CheckAdmin)
+	walletRouter.POST("/user", walletMgr.GetUserWallet)
+	walletRouter.POST("/adjust", walletMgr.AdjustBalance)
+	walletRouter.POST("/transactions", walletMgr.GetTransactions)
 
 	initGroup := router.Group("/client_config", mw.CheckAdmin)
 	initGroup.POST("/get", admin.GetClientConfig) // Get client initialization configuration

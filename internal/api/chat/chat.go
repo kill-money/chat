@@ -54,6 +54,7 @@ type Api struct {
 	imApiCaller imapi.CallerInterface
 	Receptionist *ReceptionistChatHandler // 二开：接待员功能，由 start.go 注入
 	Referral     *ReferralChatHandler     // 二开：推荐系统，由 start.go 注入
+	Wallet       *WalletChatHandler       // 二开：钱包系统，由 start.go 注入
 }
 
 // ################## ACCOUNT ##################

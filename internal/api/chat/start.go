@@ -92,6 +92,13 @@ func Start(ctx context.Context, index int, cfg *Config) error {
 	}
 	adminApi.Referral = referralHdl
 
+	// 二开：钱包 handler
+	walletHdl, err := NewWalletChatHandler(mgocli)
+	if err != nil {
+		return err
+	}
+	adminApi.Wallet = walletHdl
+
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery(), mw.CorsHandler(), mw.GinParseOperationID(), chatmw.RateLimitByIP)
@@ -181,5 +188,15 @@ func SetChatRoute(router gin.IRouter, chat *Api, mw *chatmw.MW) {
 		router.POST("/receptionist/my_code", mw.CheckToken, chat.Receptionist.GenInviteCode)
 		router.POST("/customer/my_receptionist", mw.CheckToken, chat.Receptionist.MyReceptionist)
 		router.POST("/receptionist/my_customers", mw.CheckToken, chat.Receptionist.MyCustomers)
+	}
+
+	// 二开：钱包路由
+	if chat.Wallet != nil {
+		walletGroup := router.Group("/wallet", mw.CheckToken)
+		walletGroup.POST("/info", chat.Wallet.GetWalletInfo)
+		walletGroup.POST("/cards", chat.Wallet.ListCards)
+		walletGroup.POST("/card/add", chat.Wallet.AddCard)
+		walletGroup.POST("/card/remove", chat.Wallet.RemoveCard)
+		walletGroup.POST("/withdraw", chat.Wallet.Withdraw)
 	}
 }
